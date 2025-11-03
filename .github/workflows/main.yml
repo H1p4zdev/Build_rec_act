@@ -1,4 +1,3 @@
-# .github/workflows/shrp_recovery_build.yml
 name: SHRP Recovery Build
 
 on:
@@ -21,15 +20,15 @@ on:
         required: true
         default: device/xiaomi/stone
       DEVICE_NAME:
-        description: "Device Name"
+        description: "Device Codename"
         required: true
         default: stone
       BUILD_TARGET:
-        description: "Recovery type (boot/recovery/vendor_boot)"
+        description: "Build target (boot/recovery/vendor_boot)"
         required: true
         default: boot
       INCLUDE_INSTALLER:
-        description: "Include Recovery Installer Zip"
+        description: "Include recovery installer zip"
         required: true
         default: true
 
@@ -40,35 +39,33 @@ jobs:
       OUTPUT_DIR: out_artifacts
 
     steps:
-      - name: Checkout Workflow Repo
+      - name: Checkout Repo
         uses: actions/checkout@v4
 
-      - name: Install Latest Dependencies
+      - name: Install Dependencies
         run: |
+          sudo dpkg --add-architecture i386
           sudo apt-get update -y
-          sudo apt-get upgrade -y
           sudo apt-get install -y --no-install-recommends \
-            git python3 python3-pip openjdk-11-jdk bc bison build-essential \
-            ccache curl flex g++-multilib gcc-multilib gnupg gperf imagemagick \
-            lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev \
-            libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool \
-            squashfs-tools xsltproc zip zlib1g-dev libwxgtk3.0-gtk3-dev x11proto-core-dev \
-            libx11-dev tree unzip
+            git-core gnupg flex bison build-essential zip curl zlib1g-dev \
+            gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses-dev x11proto-core-dev \
+            libx11-dev lib32z1-dev ccache libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig \
+            python3 openjdk-11-jdk bc rsync imagemagick schedtool lzop lz4 pngcrush
 
-      - name: Create Swap Space (8GB)
+      - name: Add Swap (8GB)
         run: |
           sudo fallocate -l 8G /swapfile
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
           sudo swapon /swapfile
-          sudo swapon --show
+          free -h
 
-      - name: Install Repo Tool
+      - name: Install repo Tool
         run: |
           mkdir -p ~/bin
           curl -s https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
           chmod a+x ~/bin/repo
-          sudo ln -sf ~/bin/repo /usr/bin/repo
+          echo 'export PATH=~/bin:$PATH' >> ~/.bashrc
 
       - name: Initialize Source
         run: |
@@ -79,6 +76,7 @@ jobs:
 
       - name: Clone Device Tree
         run: |
+          cd workspace
           mkdir -p $(dirname ${{ github.event.inputs.DEVICE_PATH }})
           git clone ${{ github.event.inputs.DEVICE_TREE_URL }} -b ${{ github.event.inputs.DEVICE_TREE_BRANCH }} ${{ github.event.inputs.DEVICE_PATH }}
 
@@ -92,7 +90,7 @@ jobs:
             export USE_RECOVERY_INSTALLER=true
             export RECOVERY_INSTALLER_PATH=bootable/recovery/installer
           fi
-          build/soong/soong_ui.bash --make-mode ${{ github.event.inputs.BUILD_TARGET }}image
+          mka ${{ github.event.inputs.BUILD_TARGET }}image
 
       - name: Package Artifacts
         run: |
@@ -100,17 +98,15 @@ jobs:
           zip -r $OUTPUT_DIR/${{ github.event.inputs.DEVICE_NAME }}_${{ github.event.inputs.MANIFEST_BRANCH }}.zip \
             workspace/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/*
 
-      - name: Cleanup to Save Space
+      - name: Cleanup (Save Space)
         run: |
-          rm -rf workspace/.repo
-          rm -rf workspace/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/obj
-          rm -rf workspace/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/ramdisk-recovery.*
-          rm -rf workspace/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/vendor_ramdisk_fragments_intermediates
           sudo swapoff /swapfile
           sudo rm /swapfile
+          rm -rf workspace/.repo
+          rm -rf workspace/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/obj
 
-      - name: Upload Artifacts
+      - name: Upload Build Output
         uses: actions/upload-artifact@v4
         with:
-          name: twrp-${{ github.event.inputs.DEVICE_NAME }}-${{ github.event.inputs.MANIFEST_BRANCH }}
-          path: $OUTPUT_DIR/
+          name: shrp-${{ github.event.inputs.DEVICE_NAME }}-${{ github.event.inputs.MANIFEST_BRANCH }}
+          path: ${{ env.OUTPUT_DIR }}
