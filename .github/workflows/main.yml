@@ -1,6 +1,9 @@
 # .github/workflows/recovery_build.yml
 name: SHRP Recovery Build
-
+- uses: actions/upload-artifact@v4
+  with:
+    name: my‑artifact
+    path: path/to/artifacts/*
 on:
   workflow_dispatch:
     inputs:
