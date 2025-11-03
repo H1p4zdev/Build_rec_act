@@ -37,6 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       OUTPUT_DIR: out_artifacts
+      PATH: ~/bin:$PATH
 
     steps:
       - name: Checkout Repo
@@ -65,9 +66,9 @@ jobs:
           mkdir -p ~/bin
           curl -s https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
           chmod a+x ~/bin/repo
-          echo 'export PATH=~/bin:$PATH' >> ~/.bashrc
+          echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
 
-      - name: Initialize Source
+      - name: Initialize SHRP Source
         run: |
           mkdir -p workspace
           cd workspace
