@@ -1,0 +1,105 @@
+# .github/workflows/recovery_build.yml
+name: SHRP Recovery Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      MANIFEST_BRANCH:
+        description: "SHRP Manifest Branch"
+        required: true
+        default: shrp-12.1
+      DEVICE_TREE_URL:
+        description: "Device Tree URL"
+        required: true
+        default: https://github.com/H1p4zdev/device_xiaomi_stone_twrp.git
+      DEVICE_TREE_BRANCH:
+        description: "Device Tree Branch"
+        required: true
+        default: master
+      DEVICE_PATH:
+        description: "Path to place device tree"
+        required: true
+        default: device/xiaomi/stone
+      DEVICE_NAME:
+        description: "Device Name"
+        required: true
+        default: stone
+      BUILD_TARGET:
+        description: "Recovery type (boot/recovery/vendor_boot)"
+        required: true
+        default: boot
+      INCLUDE_INSTALLER:
+        description: "Include Recovery Installer Zip"
+        required: true
+        default: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      OUTPUT_DIR: out_artifacts
+
+    steps:
+      - name: Checkout Workflow Repo
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          sudo apt update -y
+          sudo apt install -y git python3 openjdk-11-jdk bc bison build-essential \
+          ccache curl flex g++-multilib gcc-multilib gnupg gperf imagemagick \
+          lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev \
+          libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool \
+          squashfs-tools xsltproc zip zlib1g-dev libwxgtk3.0-gtk3-dev x11proto-core-dev \
+          libx11-dev tree
+
+      - name: Install Repo Tool
+        run: |
+          mkdir -p ~/bin
+          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+          chmod a+x ~/bin/repo
+          sudo ln -sf ~/bin/repo /usr/bin/repo
+
+      - name: Initialize Source
+        run: |
+          mkdir -p workspace
+          cd workspace
+          repo init -u https://github.com/SHRP-Reborn/manifest.git -b ${{ github.event.inputs.MANIFEST_BRANCH }} --depth=1
+          repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
+
+      - name: Clone Device Tree
+        run: |
+          mkdir -p $(dirname ${{ github.event.inputs.DEVICE_PATH }})
+          git clone ${{ github.event.inputs.DEVICE_TREE_URL }} -b ${{ github.event.inputs.DEVICE_TREE_BRANCH }} ${{ github.event.inputs.DEVICE_PATH }}
+
+      - name: Build Recovery
+        run: |
+          cd workspace
+          export ALLOW_MISSING_DEPENDENCIES=true
+          source build/envsetup.sh
+          lunch twrp_${{ github.event.inputs.DEVICE_NAME }}-eng
+          if [ "${{ github.event.inputs.INCLUDE_INSTALLER }}" = "true" ]; then
+            export USE_RECOVERY_INSTALLER=true
+            export RECOVERY_INSTALLER_PATH=bootable/recovery/installer
+          fi
+          build/soong/soong_ui.bash --make-mode ${{ github.event.inputs.BUILD_TARGET }}image
+
+      - name: Package Artifacts
+        run: |
+          mkdir -p $OUTPUT_DIR
+          zip -r $OUTPUT_DIR/${{ github.event.inputs.DEVICE_NAME }}_${{ github.event.inputs.MANIFEST_BRANCH }}.zip \
+            workspace/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/*
+
+      - name: Cleanup to Save Space
+        run: |
+          # Remove all intermediate build files
+          rm -rf workspace/.repo
+          rm -rf workspace/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/obj
+          rm -rf workspace/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/ramdisk-recovery.*
+          rm -rf workspace/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/vendor_ramdisk_fragments_intermediates
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: twrp-${{ github.event.inputs.DEVICE_NAME }}-${{ github.event.inputs.MANIFEST_BRANCH }}
+          path: $OUTPUT_DIR/
